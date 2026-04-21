@@ -132,11 +132,27 @@ class WQSession(requests.Session):
                 r = self.get(f'https://api.worldquantbrain.com/alphas/{alpha_link}').json()
                 logging.info(f'{thread} -- Obtained alpha link: https://platform.worldquantbrain.com/alpha/{alpha_link}')
 
-                # Auto-name the alpha
+                # Get self-correlation from correlations/self API
+                corr_r = self.get(f'https://api.worldquantbrain.com/alphas/{alpha_link}/correlations/self')
+                self_corr = -1
+                try:
+                    if corr_r.text:
+                        corr_data = corr_r.json()
+                        records = corr_data.get('records', [])
+                        if records:
+                            self_corr = max(float(rec[5]) for rec in records)
+                            logging.info(f'{thread} -- Self-correlation: {self_corr:.4f}')
+                except Exception as e:
+                    logging.info(f'{thread} -- Failed to get self-correlation: {e}')
+
+                # Auto-name the alpha (include self-correlation)
                 sharpe = r['is']['sharpe']
                 fitness = r['is']['fitness']
                 turnover = round(100*r['is']['turnover'], 2)
-                name = f'S{sharpe:.1f}_F{fitness:.2f}_T{int(turnover)}d{decay}'
+                if self_corr >= 0:
+                    name = f'S{sharpe:.1f}_F{fitness:.2f}_T{int(turnover)}_C{self_corr:.2f}d{decay}'
+                else:
+                    name = f'S{sharpe:.1f}_F{fitness:.2f}_T{int(turnover)}d{decay}'
                 self.patch(f'https://api.worldquantbrain.com/alphas/{alpha_link}', json={'name': name})
                 logging.info(f'{thread} -- Named alpha as: {name}')
 
@@ -155,7 +171,7 @@ class WQSession(requests.Session):
                     r['is']['sharpe'],
                     r['is']['fitness'],
                     round(100*r['is']['turnover'], 2),
-                    weight_check, subsharpe, -1,
+                    weight_check, subsharpe, self_corr,
                     universe, f'https://platform.worldquantbrain.com/alpha/{alpha_link}', alpha
                 ]
             writer.writerow(row)
