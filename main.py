@@ -27,18 +27,26 @@ class WQSession(requests.Session):
         self.rows_processed = []
 
     def login(self):
-        with open(self.json_fn, 'r') as f:
-            creds = json.loads(f.read())
-            email, password = creds['email'], creds['password']
-            self.auth = (email, password)
-            r = self.post('https://api.worldquantbrain.com/authentication')
-        if 'user' not in r.json():
+        import time as _time
+        for attempt in range(5):
+            with open(self.json_fn, 'r') as f:
+                creds = json.loads(f.read())
+                email, password = creds['email'], creds['password']
+                self.auth = (email, password)
+                r = self.post('https://api.worldquantbrain.com/authentication')
+            if 'user' in r.json():
+                break
             if 'inquiry' in r.json():
                 input(f"Please complete biometric authentication at {r.url}/persona?inquiry={r.json()['inquiry']} before continuing...")
                 self.post(f"{r.url}/persona", json=r.json())
-            else:
-                print(f'WARNING! {r.json()}')
-                input('Press enter to quit...')
+                break
+            if r.status_code == 429 or 'rate limit' in r.text.lower():
+                wait = 30 * (attempt + 1)
+                logging.info(f'Rate limited, waiting {wait}s...')
+                _time.sleep(wait)
+                continue
+            print(f'WARNING! {r.json()}')
+            _time.sleep(10)
         logging.info('Logged in to WQBrain!')
 
     def simulate(self, data):
