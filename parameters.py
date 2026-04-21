@@ -1,82 +1,44 @@
 from commands import *
 
+# 基于 winning formula 的变体 + 新模式
 ALPHAS = [
-    # Simple direct formulas - high information density
-    '(-1 * ts_delta(returns, 1))',
-    '(-1 * ts_delta(close, 1))',
-    '(close - ts_delay(close, 1))',
-    'rank(ts_delta(returns, 1))',
-    'rank(-ts_delta(close, 1))',
-    # Mean reversion - short term
-    '(-1 * (close - ts_delay(close, 1)))',
-    '(-1 * (close - ts_sum(close, 2) / 2))',
-    '(-1 * (close - ts_sum(close, 3) / 3))',
-    # Volume-based short term
-    'ts_delta(volume, 1)',
-    '(-1 * ts_delta(volume, 1))',
-    'rank(ts_delta(volume, 1))',
-    # Rank-based signals
-    'rank(close - ts_min(close, 5))',
-    'rank(ts_max(close, 5) - close)',
-    'rank((close - vwap) / (high - low + 0.001))',
-    # Correlation short term
-    '(-1 * ts_corr(ts_delta(close, 1), ts_delta(volume, 1), 3))',
-    # Returns-based
-    '(-1 * rank(returns))',
-    '(-1 * rank(ts_delta(returns, 2)))',
-    # VWAP deviation
-    '(vwap - close) / (high - low + 0.001)',
-    'rank((vwap - close) / (high - low + 0.001))',
-    # ts_arg_max/min signals
-    '(-1 * ts_arg_max(returns, 3))',
-    'ts_min(returns, 3)',
-    # Scale-based combinations
-    'scale(ts_delta(close, 1))',
-    'scale(-ts_delta(volume, 1))',
-    '(-1 * scale(ts_delta(returns, 2)))',
-    # ts_decay_linear with very short windows
-    '(-1 * ts_decay_linear(ts_delta(close, 1), 3))',
-    'ts_decay_linear(-ts_delta(volume, 1), 3)',
-    # ts_rank combinations
-    '(-1 * ts_rank(ts_delta(close, 1), 5))',
-    'ts_rank(-ts_delta(volume, 1), 5)',
-    # ts_std_dev based
-    '(-1 * ts_std_dev(returns, 5))',
-    'ts_std_dev(returns, 5)',
-    # ts_sum short window
-    'ts_sum(returns, 2)',
-    '(-1 * ts_sum(returns, 3))',
-    # ts_product
-    '(-1 * ts_product(returns, 3))',
-    # ts_corr with short windows
-    '(-1 * ts_corr(returns, volume, 5))',
-    'ts_corr(returns, volume, 5)',
-    # Signed power
-    'signed_power(returns, 2)',
-    '(-1 * signed_power(returns, 2))',
-    # Log_diff
-    '(-1 * log_diff(close))',
-    'log_diff(close)',
-    # Group operations - short term
-    '(-1 * group_zscore(ts_delta(close, 1), subindustry))',
-    'group_zscore(ts_delta(returns, 2), sector)',
-    # Combined signals
-    '(-1 * ts_delta(close, 1) * ts_delta(volume, 1))',
-    '(-1 * ts_delta(returns, 1) * rank(volume))',
-    # ts_av_diff
-    '(-1 * ts_av_diff(close, 5))',
-    # ts_entropy
-    '(-1 * ts_entropy(returns, 10))',
-    # ts_skewness/kurtosis
-    '(-1 * ts_skewness(returns, 10))',
-    'ts_kurtosis(returns, 10)',
+    # Winning formula 的变体（改窗口期）
+    'scale(((ts_sum(close, 5) / 5) - close)) + (15 * scale(ts_corr(vwap, ts_delay(close, 3), 180)))',
+    'scale(((ts_sum(close, 10) / 10) - close)) + (25 * scale(ts_corr(vwap, ts_delay(close, 7), 270)))',
+    'scale(((ts_sum(close, 7) / 7) - close)) + (20 * scale(ts_corr(volume, ts_delay(close, 5), 200)))',
+
+    # 用 ts_decay_linear 替代 ts_sum
+    'scale(ts_decay_linear(close, 7) - close) + (18 * scale(ts_corr(vwap, ts_delay(close, 5), 230)))',
+    'scale(ts_decay_linear(close, 10) - close) + (22 * scale(ts_corr(vwap, ts_delay(close, 3), 180)))',
+
+    # 多信号组合
+    'scale((close - ts_sum(close, 7) / 7)) + (10 * scale(ts_corr(vwap, volume, 150))) + (10 * scale(ts_corr(close, ts_delay(close, 5), 200)))',
+    'scale((close - ts_sum(close, 5) / 5)) + (15 * scale(ts_corr(returns, volume, 120)))',
+
+    # rank 替代 scale
+    'rank((close - ts_sum(close, 7) / 7)) + (20 * rank(ts_corr(vwap, ts_delay(close, 5), 230)))',
+    'rank((close - ts_sum(close, 10) / 10)) + (15 * rank(ts_corr(vwap, ts_delay(close, 3), 180)))',
+
+    # group_zscore 中性化
+    'scale(group_zscore((close - ts_sum(close, 7) / 7), subindustry)) + (20 * scale(ts_corr(vwap, ts_delay(close, 5), 230)))',
+    'scale(group_zscore((close - ts_sum(close, 5) / 5), sector)) + (15 * scale(ts_corr(vwap, ts_delay(close, 3), 180)))',
+
+    # ts_std_dev 波动率调整
+    'scale(((close - ts_sum(close, 7) / 7) / (ts_std_dev(returns, 20) + 0.01))) + (20 * scale(ts_corr(vwap, ts_delay(close, 5), 230)))',
+
+    # 更长的相关性窗口
+    'scale(((ts_sum(close, 7) / 7) - close)) + (25 * scale(ts_corr(vwap, ts_delay(close, 5), 360)))',
+    'scale(((ts_sum(close, 7) / 7) - close)) + (30 * scale(ts_corr(vwap, ts_delay(close, 10), 300)))',
+
+    # 原始 winning formula（再跑一次确认）
+    'scale(((ts_sum(close, 7) / 7) - close)) + (20 * scale(ts_corr(vwap, ts_delay(close, 5), 230)))',
 ]
 
 PARAM_SETS = [
-    {'decay': 1, 'truncation': 0.01, 'neutralization': 'SUBINDUSTRY', 'universe': 'TOP3000', 'region': 'USA'},
-    {'decay': 2, 'truncation': 0.01, 'neutralization': 'SUBINDUSTRY', 'universe': 'TOP3000', 'region': 'USA'},
-    {'decay': 3, 'truncation': 0.01, 'neutralization': 'SECTOR', 'universe': 'TOP3000', 'region': 'USA'},
-    {'decay': 1, 'truncation': 0.02, 'neutralization': 'SECTOR', 'universe': 'TOP3000', 'region': 'USA'},
+    # decay=10 是最优区间
+    {'decay': 10, 'truncation': 0.08, 'neutralization': 'SUBINDUSTRY', 'universe': 'TOP3000', 'region': 'USA'},
+    {'decay': 12, 'truncation': 0.08, 'neutralization': 'SUBINDUSTRY', 'universe': 'TOP3000', 'region': 'USA'},
+    {'decay': 15, 'truncation': 0.08, 'neutralization': 'SECTOR', 'universe': 'TOP3000', 'region': 'USA'},
 ]
 
 DATA = [

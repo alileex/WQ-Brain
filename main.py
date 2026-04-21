@@ -17,10 +17,22 @@ class WQSession(requests.Session):
         self.login()
         old_get, old_post = self.get, self.post
         def new_get(*args, **kwargs):
-            try:    return old_get(*args, **kwargs)
+            try:
+                r = old_get(*args, **kwargs)
+                if r.status_code in (503, 502, 504):
+                    logging.info(f'HTTP {r.status_code}, retrying in 10s...')
+                    time.sleep(10)
+                    return new_get(*args, **kwargs)
+                return r
             except: return new_get(*args, **kwargs)
         def new_post(*args, **kwargs):
-            try:    return old_post(*args, **kwargs)
+            try:
+                r = old_post(*args, **kwargs)
+                if r.status_code in (503, 502, 504):
+                    logging.info(f'HTTP {r.status_code}, retrying in 10s...')
+                    time.sleep(10)
+                    return new_post(*args, **kwargs)
+                return r
             except: return new_post(*args, **kwargs)
         self.get, self.post = new_get, new_post
         self.login_expired = False
@@ -119,6 +131,15 @@ class WQSession(requests.Session):
             else:
                 r = self.get(f'https://api.worldquantbrain.com/alphas/{alpha_link}').json()
                 logging.info(f'{thread} -- Obtained alpha link: https://platform.worldquantbrain.com/alpha/{alpha_link}')
+
+                # Auto-name the alpha
+                sharpe = r['is']['sharpe']
+                fitness = r['is']['fitness']
+                turnover = round(100*r['is']['turnover'], 2)
+                name = f'S{sharpe:.1f}_F{fitness:.2f}_T{int(turnover)}d{decay}'
+                self.patch(f'https://api.worldquantbrain.com/alphas/{alpha_link}', json={'name': name})
+                logging.info(f'{thread} -- Named alpha as: {name}')
+
                 passed = 0
                 for check in r['is']['checks']:
                     passed += check['result'] == 'PASS'
